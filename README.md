@@ -71,7 +71,7 @@ Na aba "Sobre", o usuário encontra:
 ## 👨‍💻 Desenvolvedor
 
 Feito com 💡 e 💻 por **Carlos H S B Silva**  
-Contato: [seu email/site/redes sociais]
+Contato: carlos135henrique@gmail.com
 
 ---
 
