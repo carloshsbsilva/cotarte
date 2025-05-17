@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const activityTimeout = useRef<number>();
-  const authStateSubscription = useRef<{ unsubscribe: () => void }>();
+  const authStateSubscription = useRef<{ unsubscribe: () => void } | undefined>();
 
   const resetActivityTimer = () => {
     if (activityTimeout.current) {
@@ -46,8 +46,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
 
       // Unsubscribe from auth state changes
-      if (authStateSubscription.current) {
+      if (authStateSubscription.current && typeof authStateSubscription.current.unsubscribe === 'function') {
         authStateSubscription.current.unsubscribe();
+        authStateSubscription.current = undefined;
       }
 
       // Sign out from Supabase
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initializeAuth();
 
     // Listen for changes on auth state
-    authStateSubscription.current = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       setLoading(false);
       
@@ -117,6 +118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resetActivityTimer();
       }
     });
+
+    // Store the subscription
+    authStateSubscription.current = subscription;
 
     return () => {
       // Cleanup event listeners
@@ -131,8 +135,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       
       // Unsubscribe from auth state changes
-      if (authStateSubscription.current) {
+      if (authStateSubscription.current && typeof authStateSubscription.current.unsubscribe === 'function') {
         authStateSubscription.current.unsubscribe();
+        authStateSubscription.current = undefined;
       }
     };
   }, [user, navigate]);
