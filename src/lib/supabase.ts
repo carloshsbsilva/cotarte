@@ -16,40 +16,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 const TIMEOUT_DURATION = 5000; // 5 seconds timeout
 
-// Function to check if a URL is reachable with timeout
-async function isOnline(url: string): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_DURATION);
-
-    const response = await fetch(url, {
-      method: 'HEAD',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-    return response.ok;
-  } catch (error) {
-    console.error('Network check error:', error);
-    return false;
-  }
-}
-
 // Function to check Supabase connection with retries
 export async function checkSupabaseConnection(retries = 2): Promise<{ isConnected: boolean; error?: string }> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      // First check if we can reach Supabase URL
-      const isReachable = await isOnline(supabaseUrl);
-      if (!isReachable) {
-        throw new Error('Não foi possível conectar ao servidor Supabase');
-      }
-
       // Try a simple query to verify database connection
       const { data, error } = await supabase
         .from('profiles')
         .select('id')
-        .limit(1);
+        .limit(1)
+        .timeout(TIMEOUT_DURATION);
 
       if (error) {
         throw error;
