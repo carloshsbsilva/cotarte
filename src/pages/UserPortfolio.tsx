@@ -43,8 +43,7 @@ const UserPortfolio: React.FC = () => {
             image_url,
             price_per_share,
             market_value,
-            total_shares,
-            user_id
+            total_shares
           )
         `)
         .eq('user_id', user.id)
@@ -59,42 +58,20 @@ const UserPortfolio: React.FC = () => {
         return;
       }
 
-      // Fetch artist information separately
-      const artworkUserIds = data.map(item => item.artwork.user_id);
-      const { data: artistsData, error: artistsError } = await supabase
-        .from('profiles')
-        .select('id, first_name, last_name, name')
-        .in('id', artworkUserIds);
-
-      if (artistsError) throw artistsError;
-
-      // Create a map of artist data
-      const artistsMap = new Map(artistsData?.map(artist => [artist.id, artist]));
-
       // Transform data into UserInvestment format
-      const transformedInvestments: UserInvestment[] = data.map(item => {
-        const artist = artistsMap.get(item.artwork.user_id);
-        const artistName = artist?.first_name && artist?.last_name
-          ? `${artist.first_name} ${artist.last_name}`
-          : artist?.name || 'Unknown Artist';
-
-        const currentPricePerShare = item.artwork.market_value / item.artwork.total_shares;
-        const percentageChange = ((currentPricePerShare - item.artwork.price_per_share) / item.artwork.price_per_share) * 100;
-
-        return {
-          id: item.id,
-          userId: user.id,
-          artworkId: item.artwork.id,
-          artworkTitle: item.artwork.title,
-          artworkImageUrl: item.artwork.image_url,
-          artistName,
-          shares: item.shares,
-          initialPricePerShare: item.artwork.price_per_share,
-          currentPricePerShare,
-          percentageChange,
-          purchaseDate: new Date().toISOString() // This should come from transaction history in a real implementation
-        };
-      });
+      const transformedInvestments: UserInvestment[] = data.map(item => ({
+        id: item.id,
+        userId: user.id,
+        artworkId: item.artwork.id,
+        artworkTitle: item.artwork.title,
+        artworkImageUrl: item.artwork.image_url,
+        artistName: 'Unknown Artist', // Since we're not fetching artist info anymore
+        shares: item.shares,
+        initialPricePerShare: item.artwork.price_per_share,
+        currentPricePerShare: item.artwork.market_value / item.artwork.total_shares,
+        percentageChange: ((item.artwork.market_value / item.artwork.total_shares - item.artwork.price_per_share) / item.artwork.price_per_share) * 100,
+        purchaseDate: new Date().toISOString() // This should come from transaction history in a real implementation
+      }));
 
       setInvestments(transformedInvestments);
     } catch (error: any) {
