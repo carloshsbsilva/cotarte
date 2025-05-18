@@ -7,59 +7,22 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Increase timeout and add retrying capability
+// Create Supabase client with updated configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true
   },
   global: {
-    fetch: async (url, options = {}) => {
-      const maxRetries = 3;
-      let attempt = 0;
-      
-      while (attempt < maxRetries) {
-        try {
-          const response = await fetch(url, {
-            ...options,
-            // Add credentials and CORS mode
-            credentials: 'include',
-            mode: 'cors',
-            headers: {
-              ...options.headers,
-              'Cache-Control': 'no-cache',
-            },
-          });
-          
-          // Check if response is ok
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          
-          return response;
-        } catch (error) {
-          attempt++;
-          
-          // If we've tried maximum times, throw the error
-          if (attempt === maxRetries) {
-            throw error;
-          }
-          
-          // Wait before retrying with exponential backoff
-          await new Promise(resolve => 
-            setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 10000))
-          );
-        }
-      }
-      
-      // This should never be reached due to the throw in the loop
-      throw new Error('Failed to fetch after maximum retries');
+    headers: {
+      'Cache-Control': 'no-cache',
     },
   },
 });
 
-const TIMEOUT_DURATION = 10000; // Increase timeout to 10 seconds
-const MAX_RETRIES = 5; // Increase max retries
+const TIMEOUT_DURATION = 10000; // 10 seconds
+const MAX_RETRIES = 5;
 
 // Enhanced connection check with better error handling
 export async function checkSupabaseConnection(retries = MAX_RETRIES): Promise<{ isConnected: boolean; error?: string }> {
