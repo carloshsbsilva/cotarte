@@ -24,8 +24,7 @@ export async function checkSupabaseConnection(retries = 2): Promise<{ isConnecte
       const { data, error } = await supabase
         .from('profiles')
         .select('id')
-        .limit(1)
-        .timeout(TIMEOUT_DURATION);
+        .limit(1);
 
       if (error) {
         throw error;
