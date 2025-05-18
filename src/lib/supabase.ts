@@ -7,24 +7,77 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+// Increase timeout and add retrying capability
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
   },
+  global: {
+    fetch: async (url, options = {}) => {
+      const maxRetries = 3;
+      let attempt = 0;
+      
+      while (attempt < maxRetries) {
+        try {
+          const response = await fetch(url, {
+            ...options,
+            // Add credentials and CORS mode
+            credentials: 'include',
+            mode: 'cors',
+            headers: {
+              ...options.headers,
+              'Cache-Control': 'no-cache',
+            },
+          });
+          
+          // Check if response is ok
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          return response;
+        } catch (error) {
+          attempt++;
+          
+          // If we've tried maximum times, throw the error
+          if (attempt === maxRetries) {
+            throw error;
+          }
+          
+          // Wait before retrying with exponential backoff
+          await new Promise(resolve => 
+            setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 10000))
+          );
+        }
+      }
+      
+      // This should never be reached due to the throw in the loop
+      throw new Error('Failed to fetch after maximum retries');
+    },
+  },
 });
 
-const TIMEOUT_DURATION = 5000; // 5 seconds timeout
+const TIMEOUT_DURATION = 10000; // Increase timeout to 10 seconds
+const MAX_RETRIES = 5; // Increase max retries
 
-// Function to check Supabase connection with retries
-export async function checkSupabaseConnection(retries = 2): Promise<{ isConnected: boolean; error?: string }> {
+// Enhanced connection check with better error handling
+export async function checkSupabaseConnection(retries = MAX_RETRIES): Promise<{ isConnected: boolean; error?: string }> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      // Try a simple query to verify database connection
-      const { data, error } = await supabase
+      // Set timeout for the request
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Connection timeout')), TIMEOUT_DURATION);
+      });
+
+      // Try a simple query with timeout
+      const queryPromise = supabase
         .from('profiles')
         .select('id')
-        .limit(1);
+        .limit(1)
+        .single();
+
+      const { error } = await Promise.race([queryPromise, timeoutPromise]);
 
       if (error) {
         throw error;
@@ -34,13 +87,18 @@ export async function checkSupabaseConnection(retries = 2): Promise<{ isConnecte
     } catch (error: any) {
       console.error(`Connection check attempt ${attempt + 1} failed:`, error);
 
+      // If this is the last attempt, return detailed error information
       if (attempt === retries) {
         let errorMessage = 'Erro de conexão com o servidor';
         
-        if (error.message?.includes('Failed to fetch') || error.code === 'NETWORK_ERROR') {
+        if (error.message?.includes('timeout')) {
+          errorMessage = 'O servidor demorou muito para responder. Por favor, tente novamente.';
+        } else if (error.message?.includes('Failed to fetch') || error.code === 'NETWORK_ERROR') {
           errorMessage = 'Não foi possível conectar ao servidor. Verifique sua conexão com a internet.';
         } else if (error.code === 'PGRST301') {
           errorMessage = 'Erro de conexão com o banco de dados. Tente novamente mais tarde.';
+        } else if (error.code === 'CORS_ERROR') {
+          errorMessage = 'Erro de permissão de acesso ao servidor. Entre em contato com o suporte.';
         }
 
         return { 
@@ -49,8 +107,12 @@ export async function checkSupabaseConnection(retries = 2): Promise<{ isConnecte
         };
       }
 
-      // Wait before retrying (exponential backoff)
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      // Calculate backoff delay with jitter
+      const jitter = Math.random() * 1000;
+      const backoffDelay = Math.min(1000 * Math.pow(2, attempt) + jitter, 10000);
+      
+      // Wait before retrying
+      await new Promise(resolve => setTimeout(resolve, backoffDelay));
     }
   }
 
