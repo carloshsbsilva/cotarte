@@ -4,9 +4,10 @@ import { useAuth } from '../contexts/AuthContext';
 
 interface AuthGuardProps {
   children: React.ReactNode;
+  allowUnauthenticated?: boolean;
 }
 
-const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
+const AuthGuard: React.FC<AuthGuardProps> = ({ children, allowUnauthenticated = false }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -18,7 +19,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
     );
   }
 
-  if (!user) {
+  if (!user && !allowUnauthenticated) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
 

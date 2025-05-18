@@ -23,9 +23,9 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Layout />}>
         <Route index element={<Home />} />
-        <Route path="market" element={<Market />} />
-        <Route path="news" element={<News />} />
-        <Route path="artwork/:id" element={<ArtworkDetail />} />
+        <Route path="market" element={<AuthGuard allowUnauthenticated><Market /></AuthGuard>} />
+        <Route path="news" element={<AuthGuard allowUnauthenticated><News /></AuthGuard>} />
+        <Route path="artwork/:id" element={<AuthGuard allowUnauthenticated><ArtworkDetail /></AuthGuard>} />
         <Route path="portfolio" element={<AuthGuard><UserPortfolio /></AuthGuard>} />
         <Route path="new-ipo" element={<AuthGuard><NewArtworkIPO /></AuthGuard>} />
         <Route path="profile" element={<AuthGuard><Profile /></AuthGuard>} />
