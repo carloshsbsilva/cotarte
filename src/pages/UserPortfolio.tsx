@@ -10,14 +10,21 @@ import { formatCurrency } from '../lib/utils';
 
 const UserPortfolio: React.FC = () => {
   const { user } = useAuth();
-  const { portfolio, loading: portfolioLoading } = usePortfolio();
+  const { portfolio, loading: portfolioLoading, error: portfolioError } = usePortfolio();
   const [investments, setInvestments] = useState<UserInvestment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
-  const fetchInvestments = async () => {
+  const fetchInvestments = async (retry = false) => {
     if (!user) return;
+
+    if (retry) {
+      setRetryCount(prev => prev + 1);
+    } else {
+      setRetryCount(0);
+    }
 
     setLoading(true);
     setError(null);
@@ -49,7 +56,15 @@ const UserPortfolio: React.FC = () => {
         .eq('user_id', user.id)
         .gt('shares', 0); // Only get shares where user has more than 0
 
-      if (error) throw error;
+      if (error) {
+        // If we get a 503 or network error and haven't exceeded retries, try again
+        if ((error.code === '503' || error.message.includes('Failed to fetch')) && retryCount < 3) {
+          const backoffDelay = Math.min(1000 * Math.pow(2, retryCount), 5000);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          return fetchInvestments(true);
+        }
+        throw error;
+      }
 
       // If no shares found, set empty investments array
       if (!data || data.length === 0) {
@@ -76,7 +91,19 @@ const UserPortfolio: React.FC = () => {
       setInvestments(transformedInvestments);
     } catch (error: any) {
       console.error('Error fetching investments:', error);
-      setError(error.message);
+      
+      let errorMessage = 'Ocorreu um erro ao carregar seus investimentos';
+      
+      if (error.message?.includes('Failed to fetch') || error.code === 'NETWORK_ERROR') {
+        setConnectionError(true);
+        errorMessage = 'Não foi possível conectar ao servidor. Verifique sua conexão com a internet.';
+      } else if (error.code === 'PGRST301') {
+        errorMessage = 'Erro de conexão com o banco de dados. Tente novamente mais tarde.';
+      } else if (error.code === '503') {
+        errorMessage = 'O serviço está temporariamente indisponível. Tente novamente em alguns minutos.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -86,6 +113,7 @@ const UserPortfolio: React.FC = () => {
     fetchInvestments();
   }, [user]);
 
+  // Show loading state
   if (loading || portfolioLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -94,6 +122,7 @@ const UserPortfolio: React.FC = () => {
     );
   }
 
+  // Show connection error state
   if (connectionError) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -107,7 +136,7 @@ const UserPortfolio: React.FC = () => {
             <li>Alta latência na rede</li>
           </ul>
           <Button 
-            onClick={fetchInvestments}
+            onClick={() => fetchInvestments()}
             className="inline-flex items-center"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
@@ -118,13 +147,14 @@ const UserPortfolio: React.FC = () => {
     );
   }
 
-  if (error) {
+  // Show error state
+  if (error || portfolioError) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md w-full text-center">
-          <p className="text-red-800 mb-4">{error}</p>
+          <p className="text-red-800 mb-4">{error || portfolioError}</p>
           <Button
-            onClick={fetchInvestments}
+            onClick={() => fetchInvestments()}
             className="inline-flex items-center"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
