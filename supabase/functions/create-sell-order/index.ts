@@ -34,6 +34,16 @@ Deno.serve(async (req) => {
       throw new Error('Invalid token');
     }
 
+    // Get user's Stripe Connect account ID
+    const { data: stripeAccount, error: stripeError } = await supabase.rpc(
+      'get_stripe_account_id',
+      { user_id: user.id }
+    );
+
+    if (stripeError || !stripeAccount) {
+      throw new Error('Stripe account not found');
+    }
+
     // Verify user has enough shares
     const { data: userShares, error: sharesError } = await supabase
       .from('user_shares')
@@ -63,7 +73,7 @@ Deno.serve(async (req) => {
     const transfer = await stripe.transfers.create({
       amount: amount - platformFee,
       currency: 'brl',
-      destination: user.id, // This should be the user's Stripe Connect account ID
+      destination: stripeAccount.stripe_account_id,
       metadata: {
         artworkId,
         userId: user.id,

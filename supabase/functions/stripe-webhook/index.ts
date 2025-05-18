@@ -23,11 +23,16 @@ Deno.serve(async (req) => {
       throw new Error('No signature found');
     }
 
+    const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
+    if (!webhookSecret) {
+      throw new Error('Webhook secret not configured');
+    }
+
     const body = await req.text();
     const event = stripe.webhooks.constructEvent(
       body,
       signature,
-      Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
+      webhookSecret
     );
 
     switch (event.type) {
