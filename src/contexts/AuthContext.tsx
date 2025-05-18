@@ -54,9 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Sign out from Supabase
       await supabase.auth.signOut();
 
-      // Clear local storage
-      localStorage.removeItem('supabase.auth.token');
-      localStorage.removeItem('supabase.auth.refreshToken');
+      // Clear ALL auth-related items from localStorage
+      localStorage.clear(); // This ensures we remove all potential auth tokens
       
       // Navigate to login page
       navigate('/login', { replace: true });
@@ -93,15 +92,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check active sessions and sets the user
     const initializeAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (session?.user) {
-          resetActivityTimer();
+        if (error || !session) {
+          // If there's an error or no session, clear everything and redirect to login
+          await handleSignOut();
+          return;
         }
+
+        setUser(session.user);
+        resetActivityTimer();
       } catch (error) {
         console.error('Error getting session:', error);
-        setUser(null);
+        await handleSignOut();
       } finally {
         setLoading(false);
       }
@@ -110,7 +113,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initializeAuth();
 
     // Listen for changes on auth state
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        await handleSignOut();
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        // If token refresh failed, sign out
+        await handleSignOut();
+        return;
+      }
+
       setUser(session?.user ?? null);
       setLoading(false);
       
