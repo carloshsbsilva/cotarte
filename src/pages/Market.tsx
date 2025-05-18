@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, checkSupabaseConnection } from '../lib/supabase';
 import ArtworkCard from '../components/ArtworkCard';
-import { Search, Filter, ArrowUpDown, X } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, X, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Artwork } from '../types';
 
@@ -28,73 +28,96 @@ const Market: React.FC = () => {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [sortOption, setSortOption] = useState<SortOption>('recent');
   const [showFilters, setShowFilters] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const [priceRange, setPriceRange] = useState<{ min: number; max: number | null }>({
     min: 0,
     max: null
   });
 
-  useEffect(() => {
-    const fetchArtworks = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  const fetchArtworks = async () => {
+    try {
+      setLoading(true);
+      setError(null);
 
-        // First fetch approved IPOs
-        const { data: approvedIpos, error: iposError } = await supabase
-          .from('ipos')
-          .select(`
-            *,
-            artwork:artworks(*),
-            user:profiles!ipos_user_id_fkey (
-              id,
-              name,
-              first_name,
-              last_name,
-              email
-            )
-          `)
-          .eq('status', 'approved')
-          .order('created_at', { ascending: false });
-
-        if (iposError) throw iposError;
-
-        if (!approvedIpos) {
-          setArtworks([]);
-          return;
-        }
-
-        // Transform IPO data to match Artwork type
-        const transformedArtworks: Artwork[] = approvedIpos.map(ipo => ({
-          id: ipo.artwork?.id || ipo.id,
-          title: ipo.title,
-          artist: ipo.user?.name || 'Artista',
-          artistName: ipo.user?.first_name && ipo.user?.last_name 
-            ? `${ipo.user.first_name} ${ipo.user.last_name}`
-            : ipo.user?.name || 'Artista',
-          description: ipo.description || '',
-          imageUrl: ipo.image_url,
-          additionalImages: [],
-          pricePerShare: ipo.price_per_share,
-          initialPricePerShare: ipo.price_per_share,
-          percentageChange: 0,
-          totalShares: ipo.total_shares,
-          investorsCount: 0,
-          createdAt: ipo.created_at,
-          categories: [ipo.category],
-          originalPrice: ipo.price_per_share * ipo.total_shares
-        }));
-
-        setArtworks(transformedArtworks);
-      } catch (error) {
-        console.error('Error fetching artworks:', error);
-        setError('Failed to load artworks. Please try again later.');
-      } finally {
-        setLoading(false);
+      // First check connection to Supabase
+      const { isConnected, error: connectionError } = await checkSupabaseConnection();
+      
+      if (!isConnected) {
+        throw new Error(connectionError || 'Failed to connect to the server');
       }
-    };
 
+      // Fetch approved IPOs
+      const { data: approvedIpos, error: iposError } = await supabase
+        .from('ipos')
+        .select(`
+          *,
+          artwork:artworks(*),
+          user:profiles!ipos_user_id_fkey (
+            id,
+            name,
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false });
+
+      if (iposError) throw iposError;
+
+      if (!approvedIpos) {
+        setArtworks([]);
+        return;
+      }
+
+      // Transform IPO data to match Artwork type
+      const transformedArtworks: Artwork[] = approvedIpos.map(ipo => ({
+        id: ipo.artwork?.id || ipo.id,
+        title: ipo.title,
+        artist: ipo.user?.name || 'Artista',
+        artistName: ipo.user?.first_name && ipo.user?.last_name 
+          ? `${ipo.user.first_name} ${ipo.user.last_name}`
+          : ipo.user?.name || 'Artista',
+        description: ipo.description || '',
+        imageUrl: ipo.image_url,
+        additionalImages: [],
+        pricePerShare: ipo.price_per_share,
+        initialPricePerShare: ipo.price_per_share,
+        percentageChange: 0,
+        totalShares: ipo.total_shares,
+        investorsCount: 0,
+        createdAt: ipo.created_at,
+        categories: [ipo.category],
+        originalPrice: ipo.price_per_share * ipo.total_shares
+      }));
+
+      setArtworks(transformedArtworks);
+      setRetryCount(0); // Reset retry count on successful fetch
+    } catch (error: any) {
+      console.error('Error fetching artworks:', error);
+      setError(
+        error.message === 'Failed to connect to the server'
+          ? 'Não foi possível conectar ao servidor. Verifique sua conexão com a internet.'
+          : 'Erro ao carregar as obras. Por favor, tente novamente.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchArtworks();
   }, []);
+
+  const handleRetry = async () => {
+    if (retryCount >= 3) {
+      setError('Número máximo de tentativas excedido. Por favor, tente novamente mais tarde.');
+      return;
+    }
+    
+    setRetryCount(prev => prev + 1);
+    await fetchArtworks();
+  };
 
   const filteredAndSortedArtworks = useMemo(() => {
     let filtered = [...artworks];
@@ -160,6 +183,24 @@ const Market: React.FC = () => {
       </div>
     );
   }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 space-y-4">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg text-center max-w-lg">
+          <p className="mb-4">{error}</p>
+          <Button
+            onClick={handleRetry}
+            disabled={retryCount >= 3}
+            className="flex items-center space-x-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Tentar novamente</span>
+          </Button>
+        </div>
+      </div>
+    );
+  }
   
   return (
     <div>
@@ -167,12 +208,6 @@ const Market: React.FC = () => {
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Mercado de Arte</h1>
         <p className="text-gray-600">Descubra e invista em obras de arte exclusivas</p>
       </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-          {error}
-        </div>
-      )}
       
       <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 mb-8">
         <div className="relative flex-1">
@@ -333,9 +368,7 @@ const Market: React.FC = () => {
       
       {filteredAndSortedArtworks.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-lg">
-          <p className="text-gray-500 text-lg mb-4">
-            {error ? 'Erro ao carregar obras' : 'Nenhuma obra aprovada disponível no momento'}
-          </p>
+          <p className="text-gray-500 text-lg mb-4">Nenhuma obra aprovada disponível no momento</p>
           {selectedCategories.length > 0 || searchTerm || priceRange.min > 0 || priceRange.max !== null ? (
             <Button onClick={clearFilters}>
               Limpar filtros
