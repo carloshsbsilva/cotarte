@@ -15,3 +15,26 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: localStorage
   }
 });
+
+export async function checkSupabaseConnection() {
+  try {
+    const { data, error } = await supabase.from('profiles').select('id').limit(1);
+    
+    if (error) {
+      return {
+        isConnected: false,
+        error: error.message
+      };
+    }
+
+    return {
+      isConnected: true,
+      error: null
+    };
+  } catch (err: any) {
+    return {
+      isConnected: false,
+      error: err.message || 'Failed to connect to Supabase'
+    };
+  }
+}
